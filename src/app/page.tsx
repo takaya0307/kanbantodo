@@ -225,9 +225,9 @@ function DroppableArea({
       <ul>
         {tasks
           .filter(
-            (task: any) => Array.isArray(task.status) && task.status[0] === id
+            (task: Task) => Array.isArray(task.status) && task.status[0] === id
           )
-          .map((task: any) => (
+          .map((task: Task) => (
             <DraggableTask
               key={task.id}
               id={task.id}

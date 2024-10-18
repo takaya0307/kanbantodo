@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
+import { DragEndEvent } from "@dnd-kit/core";
 
 interface Task {
   id: string;
@@ -110,12 +111,12 @@ export default function Home() {
   };
 
   // ドラッグ終了時の処理
-  const handleDragEnd = async (event: any) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
     if (!over) return; // ドロップ先がない場合は何もしない
 
-    const newStatus = over.id;
+    const newStatus = over.id as string;
 
     setTasks((prevTasks) =>
       prevTasks.map((task) =>
@@ -190,6 +191,16 @@ export default function Home() {
 }
 
 // ドロップエリアのコンポーネント
+interface DroppableAreaProps {
+  id: string;
+  tasks: Task[];
+  deleteTask: (id: string) => void;
+  addTask: () => void;
+  newTask: string;
+  setNewTask: (value: string) => void;
+  handleTaskClick: (task: Task) => void;
+}
+
 function DroppableArea({
   id,
   tasks,
@@ -198,7 +209,7 @@ function DroppableArea({
   newTask,
   setNewTask,
   handleTaskClick,
-}: any) {
+}: DroppableAreaProps) {
   const { setNodeRef } = useDroppable({
     id,
   });
@@ -250,7 +261,14 @@ function DroppableArea({
 }
 
 // ドラッグ可能なタスクのコンポーネント
-function DraggableTask({ id, task, deleteTask, handleTaskClick }: any) {
+interface DraggableTaskProps {
+  id: string;
+  task: Task;
+  deleteTask: (id: string) => void;
+  handleTaskClick: (task: Task) => void;
+}
+
+function DraggableTask({ id, task, deleteTask, handleTaskClick }: DraggableTaskProps) {
   const { listeners, setNodeRef, transform } = useDraggable({
     id,
   });

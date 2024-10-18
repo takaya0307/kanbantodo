@@ -1,101 +1,359 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
+
+interface Task {
+  id: string;
+  task: string;
+  createDate: string;
+  status: string[]; //タスクの状態を管理
+  explanation: string;
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  //タスクのリスト
+  const [tasks, setTasks] = useState<Task[]>([]);
+  //フォームの入力値
+  const [newTask, setNewTask] = useState("");
+  //編集中のタスクの内容
+  const [editTaskList, setEditTaskList] = useState("");
+  //編集しているタスクのID
+  const [editTaskId, setEditTaskId] = useState<string | null>(null);
+  //説明文の内容
+  const [explainTaskList, setExplainTaskList] = useState("");
+  //モーダルの表示を管理
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  //ドロップ可能なエリア
+  const droppableAreas = ["todo", "inProgress", "done"];
+
+  //microCMSからタスクを取得
+  useEffect(() => {
+    const fetchTasks = async () => {
+      const response = await fetch(
+        "https://todolistpra.microcms.io/api/v1/todo?fields=id,task,status,explanation,createDate",
+        {
+          headers: {
+            "X-MICROCMS-API-KEY": "jJWbkgVdte2WA425pLSujAWcbpYlYppQZte2",
+          },
+        }
+      );
+      const result = await response.json();
+      setTasks(result.contents);
+    };
+    fetchTasks();
+  }, []);
+
+  //新しいタスクを追加する関数
+  const addTask = async () => {
+    if (newTask === "") return; // 空のタスクは送信しない
+    await fetch("https://todolistpra.microcms.io/api/v1/todo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-MICROCMS-API-KEY": "jJWbkgVdte2WA425pLSujAWcbpYlYppQZte2",
+      },
+      body: JSON.stringify({
+        task: newTask,
+        status: ["todo"],
+        createDate: new Date().toISOString(),
+      }),
+    });
+
+    const detailResponse = await fetch(
+      "https://todolistpra.microcms.io/api/v1/todo/",
+      {
+        headers: {
+          "X-MICROCMS-API-KEY": "jJWbkgVdte2WA425pLSujAWcbpYlYppQZte2",
+        },
+      }
+    );
+    const detail = await detailResponse.json();
+    setTasks(detail.contents); // タスク一覧を更新
+    setNewTask(""); // 入力欄をクリア
+  };
+
+  //タスクを削除
+  const deleteTask = async (id: string) => {
+    await fetch(`https://todolistpra.microcms.io/api/v1/todo/${id}`, {
+      method: "DELETE",
+      headers: {
+        "X-MICROCMS-API-KEY": "jJWbkgVdte2WA425pLSujAWcbpYlYppQZte2",
+      },
+    });
+    setTasks(tasks.filter((task) => task.id !== id));
+  };
+
+  //タスクを編集
+  const editTask = async (id: string) => {
+    await fetch(`https://todolistpra.microcms.io/api/v1/todo/${id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "X-MICROCMS-API-KEY": "jJWbkgVdte2WA425pLSujAWcbpYlYppQZte2",
+      },
+      body: JSON.stringify({
+        task: editTaskList, //新しいタスクを送信
+        explanation: explainTaskList, // 説明を更新
+      }),
+    });
+
+    setTasks(
+      tasks.map((task) =>
+        task.id === id
+          ? { ...task, task: editTaskList, explanation: explainTaskList }
+          : task
+      )
+    );
+    setEditTaskId(null);
+  };
+
+  // ドラッグ終了時の処理
+  const handleDragEnd = async (event: any) => {
+    const { active, over } = event;
+
+    if (!over) return; // ドロップ先がない場合は何もしない
+
+    const newStatus = over.id;
+
+    setTasks((prevTasks) =>
+      prevTasks.map((task) =>
+        task.id === active.id ? { ...task, status: [newStatus] } : task
+      )
+    );
+
+    await fetch(`https://todolistpra.microcms.io/api/v1/todo/${active.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "X-MICROCMS-API-KEY": "jJWbkgVdte2WA425pLSujAWcbpYlYppQZte2",
+      },
+      body: JSON.stringify({
+        status: [newStatus], // ステータスを配列形式で保存
+      }),
+    });
+  };
+
+  // タスクがクリックされたときにモーダルを表示する
+  const handleTaskClick = (task: Task) => {
+    setEditTaskId(task.id);
+    setEditTaskList(task.task);
+    setExplainTaskList(task.explanation || "");
+    setIsModalOpen(true);
+  };
+
+  // モーダルを閉じる
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditTaskId(null);
+  };
+
+  // 説明とタスク名の保存
+  const saveExplanation = () => {
+    if (editTaskId) {
+      // サーバーにタスクを更新する
+      editTask(editTaskId);
+    }
+    setIsModalOpen(false); // モーダルを閉じる
+  };
+
+  return (
+    <div>
+      <DndContext onDragEnd={handleDragEnd}>
+        <div className="bg-screenBackground min-h-screen flex items-center justify-center">
+          {droppableAreas.map((area) => (
+            <DroppableArea
+              key={area}
+              id={area}
+              tasks={tasks}
+              deleteTask={deleteTask}
+              addTask={addTask}
+              newTask={newTask}
+              setNewTask={setNewTask}
+              handleTaskClick={handleTaskClick}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          ))}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </DndContext>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        onSave={saveExplanation}
+        editTaskList={editTaskList}
+        setEditTaskList={setEditTaskList}
+        explainTask={explainTaskList}
+        setExplainTask={setExplainTaskList}
+      />
     </div>
   );
 }
+
+// ドロップエリアのコンポーネント
+function DroppableArea({
+  id,
+  tasks,
+  deleteTask,
+  addTask,
+  newTask,
+  setNewTask,
+  handleTaskClick,
+}: any) {
+  const { setNodeRef } = useDroppable({
+    id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className="bg-gray-200 w-[30%] py-4 px-4 text-center rounded-md"
+    >
+      <h1 className="my-2 font-semibold">
+        {id === "todo" ? "ToDo" : id === "inProgress" ? "作業中" : "完了"}
+      </h1>
+      <ul>
+        {tasks
+          .filter(
+            (task: any) => Array.isArray(task.status) && task.status[0] === id
+          )
+          .map((task: any) => (
+            <DraggableTask
+              key={task.id}
+              id={task.id}
+              task={task}
+              deleteTask={deleteTask}
+              handleTaskClick={handleTaskClick}
+            />
+          ))}
+      </ul>
+
+      {/* タスク追加用のinputとbuttonをToDoエリアに表示 */}
+      {id === "todo" && (
+        <div className="mt-4 flex items-center">
+          <input
+            type="text"
+            value={newTask}
+            placeholder="新しいタスクを追加"
+            onChange={(e) => setNewTask(e.target.value)}
+            className="border-2 border-gray-300 rounded-lg py-2 px-3 shadow-md focus:outline-none focus:border-blue-500 transition-all duration-200 ease-in-out"
+          />
+          <button
+            onClick={addTask}
+            className="ml-3 bg-blue-500 text-white border-2 border-blue-500 rounded-lg py-2 px-4 hover:bg-blue-600 hover:border-blue-600 transition-all duration-200 ease-in-out"
+          >
+            追加
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ドラッグ可能なタスクのコンポーネント
+function DraggableTask({ id, task, deleteTask, handleTaskClick }: any) {
+  const { listeners, setNodeRef, transform } = useDraggable({
+    id,
+  });
+  const draggableStyle = transform
+    ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+      }
+    : undefined;
+
+  return (
+    <li
+      style={draggableStyle}
+      key={task.id}
+      ref={setNodeRef}
+      {...listeners}
+      className="bg-white my-2 py-3 px-4 border border-gray-300 rounded-md flex justify-between items-center hover:bg-gray-50"
+    >
+      <div className="flex-1 text-gray-800 font-medium">
+        {task.task} - {new Date(task.createDate).toLocaleString()}
+      </div>
+      <div className="flex">
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => handleTaskClick(task)}
+          className="text-blue-500 border border-blue-500 rounded-lg py-1 px-2 mx-1 hover:text-blue-600"
+        >
+          ✏️
+        </button>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => deleteTask(task.id)}
+          className="text-red-500 border border-red-500 rounded-lg py-1 px-2 hover:text-red-600"
+        >
+          🗑️
+        </button>
+      </div>
+    </li>
+  );
+}
+
+// モーダルコンポーネント
+const Modal = ({
+  isOpen,
+  onClose,
+  onSave,
+  editTaskList,
+  setEditTaskList,
+  explainTask,
+  setExplainTask,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  editTaskList: string;
+  setEditTaskList: (task: string) => void;
+  explainTask: string;
+  setExplainTask: (description: string) => void;
+}) => {
+  if (!isOpen) return null;
+
+  const handleOutsideClick = (e: React.MouseEvent) => {
+    // モーダルの外側をクリックした場合モーダルを閉じる
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      onClick={handleOutsideClick}
+      className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-lg shadow-lg p-6 max-w-lg w-full"
+      >
+        <h2 className="text-xl font-bold mb-4">タスクの編集</h2>
+        <input
+          type="text"
+          value={editTaskList}
+          onChange={(e) => setEditTaskList(e.target.value)}
+          placeholder="タスク名"
+          className="w-full border border-gray-300 p-2 mb-4 rounded"
+        />
+        <textarea
+          value={explainTask}
+          onChange={(e) => setExplainTask(e.target.value)}
+          placeholder="タスクの説明を追加"
+          className="w-full border border-gray-300 p-2 mb-4 rounded"
+        />
+        <button
+          onClick={onSave}
+          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+        >
+          保存
+        </button>
+        <button
+          onClick={onClose}
+          className="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded mr-2"
+        >
+          閉じる
+        </button>
+      </div>
+    </div>
+  );
+};
